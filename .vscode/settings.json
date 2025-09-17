@@ -1,0 +1,44 @@
+{
+  "sqltools.connections": [
+    {
+      "previewLimit": 50,
+      "server": "localhost",
+      "port": 5432,
+      "driver": "PostgreSQL",
+      "name": "Local PostgreSQL",
+      "database": "mydb",
+      "username": "myuser",
+      "password": "mypw"
+    },
+    {
+      "previewLimit": 50,
+      "server": "localhost",
+      "port": 5432,
+      "driver": "PostgreSQL",
+      "name": "MYDB",
+      "database": "mydb",
+      "username": "myuser",
+      "password": "mypw"
+    },
+    {
+      "previewLimit": 50,
+      "server": "localhost",
+      "port": 5432,
+      "driver": "PostgreSQL",
+      "name": "mydb",
+      "database": "mydb",
+      "username": "myuser",
+      "password": "mypw"
+    },
+    {
+      "previewLimit": 50,
+      "server": "localhost",
+      "port": 5432,
+      "driver": "PostgreSQL",
+      "name": "TEST1",
+      "database": "mydb",
+      "username": "myuser",
+      "password": "mypw"
+    }
+  ]
+}
