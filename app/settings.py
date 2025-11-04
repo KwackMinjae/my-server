@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 ﻿# hairfusion-service/app/settings.py
 from __future__ import annotations
 
@@ -44,4 +45,20 @@ class _SettingsV1(BaseSettings):
 
 
 Settings = _SettingsV2 if V2 else _SettingsV1
+=======
+from pydantic_settings import BaseSettings
+from pydantic import Field
+
+class Settings(BaseSettings):
+    aws_region: str = Field(..., alias="AWS_REGION")
+    aws_s3_bucket: str = Field(..., alias="AWS_S3_BUCKET")
+    aws_access_key_id: str | None = Field(default=None, alias="AWS_ACCESS_KEY_ID")
+    aws_secret_access_key: str | None = Field(default=None, alias="AWS_SECRET_ACCESS_KEY")
+    allowed_origins: str | None = Field(default=None, alias="ALLOWED_ORIGINS")
+
+    class Config:
+        env_file = ".env"
+        extra = "ignore"
+
+>>>>>>> 37eef4b1704820081e276cb3d2add88a7b0188aa
 settings = Settings()
