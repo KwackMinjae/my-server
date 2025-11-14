@@ -1,6 +1,4 @@
-<<<<<<< HEAD
-﻿# hairfusion-service/app/settings.py
-from __future__ import annotations
+﻿from __future__ import annotations
 
 # pydantic v2 우선, 없으면 v1 폴백
 try:
@@ -45,7 +43,7 @@ class _SettingsV1(BaseSettings):
 
 
 Settings = _SettingsV2 if V2 else _SettingsV1
-=======
+
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
@@ -60,5 +58,5 @@ class Settings(BaseSettings):
         env_file = ".env"
         extra = "ignore"
 
->>>>>>> 37eef4b1704820081e276cb3d2add88a7b0188aa
+
 settings = Settings()

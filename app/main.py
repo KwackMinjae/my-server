@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 ï»¿from __future__ import annotations
 # hairfusion-service/app/main.py
 
@@ -46,8 +45,8 @@ app = FastAPI(title="HairFusion Service", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=getattr(settings, "allowed_origins", ["*"]),
-=======
+    allow_origins=getattr(settings, "allowed_origins", ["*"])),
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.settings import settings
@@ -59,13 +58,13 @@ origins = settings.allowed_origins.split(",") if settings.allowed_origins else [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
->>>>>>> 37eef4b1704820081e276cb3d2add88a7b0188aa
+
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-<<<<<<< HEAD
+
 # ì •ì  íŒŒì¼ ì„œë¹™ (outputs/*)
 app.mount("/static", StaticFiles(directory="outputs"), name="static")
 
@@ -222,13 +221,6 @@ if __name__ == "__main__":
 
 
 
-
-
-=======
 @app.get("/health")
 def health():
     return {"ok": True}
-
-# ¾÷·Îµå ¶ó¿ìÅÍ µî·Ï
-app.include_router(uploads.router)
->>>>>>> 37eef4b1704820081e276cb3d2add88a7b0188aa

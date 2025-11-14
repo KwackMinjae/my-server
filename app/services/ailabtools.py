@@ -12,26 +12,39 @@ from app.settings import settings
 OUT_DIR = Path("outputs")
 OUT_DIR.mkdir(exist_ok=True)
 
+# Meshy에 넘기기 전에 최소 보장하고 싶은 해상도 (가장 긴 변 기준)
+MIN_SIZE_FOR_MESHY = 1024
+
+
 # ----- 예외 타입
-class AILabError(Exception): ...
-class AILabAuthError(AILabError): ...
-class AILabBadReq(AILabError): ...
+class AILabError(Exception):
+    ...
+
+
+class AILabAuthError(AILabError):
+    ...
+
+
+class AILabBadReq(AILabError):
+    ...
 
 
 def _candidate_headers() -> List[Dict[str, str]]:
     key = settings.ailab_api_key or ""
     return [
         {"ailabapi-api-key": key, "Accept": "application/json"},  # 공식 문서 헤더
-        {"X-API-Key": key,       "Accept": "application/json"},  # 호환 시도
-        {"X-API-KEY": key,       "Accept": "application/json"},  # 호환 시도
+        {"X-API-Key": key, "Accept": "application/json"},  # 호환 시도
+        {"X-API-KEY": key, "Accept": "application/json"},  # 호환 시도
         {"Authorization": f"Bearer {key}", "Accept": "application/json"},  # 호환 시도
     ]
 
 
-
 def _candidate_payloads(
-    face_url: str, hair_style: str | None, color: str | None,
-    image_size: int | None, task_type: str | None
+    face_url: str,
+    hair_style: str | None,
+    color: str | None,
+    image_size: int | None,
+    task_type: str | None,
 ) -> List[Tuple[str, Dict[str, Any]]]:
     """
     (mode, payload) 조합들을 시도.
@@ -63,18 +76,54 @@ def _candidate_payloads(
     ]
 
 
-async def _try_once(client: httpx.AsyncClient, url: str, headers: Dict[str, str],
-                    mode: str, payload: Dict[str, Any]) -> str:
+def _prepare_image_for_meshy(raw_bytes: bytes) -> Image.Image:
+    """
+    AILab에서 받은 이미지를 Meshy에 넘기기 전에 한 번 정리하는 단계.
+    - 항상 RGB로 변환
+    - 가장 긴 변이 MIN_SIZE_FOR_MESHY 보다 작으면 업스케일 (LANCZOS)
+    """
+    img = Image.open(io.BytesIO(raw_bytes))
+    # 모드 통일 (예: RGBA, P 모드 등 방지)
+    if img.mode not in ("RGB", "RGBA"):
+        img = img.convert("RGB")
+    else:
+        # RGBA인 경우도 Meshy/뷰어 호환을 위해 RGB로 맞추는 편이 안전
+        img = img.convert("RGB")
+
+    w, h = img.size
+    longest = max(w, h)
+
+    if longest < MIN_SIZE_FOR_MESHY:
+        scale = MIN_SIZE_FOR_MESHY / float(longest)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+        img = img.resize((new_w, new_h), Image.LANCZOS)
+
+    return img
+
+
+async def _try_once(
+    client: httpx.AsyncClient,
+    url: str,
+    headers: Dict[str, str],
+    mode: str,
+    payload: Dict[str, Any],
+) -> str:
     """
     단일 (url, headers, mode, payload) 시도.
     성공 시 결과 이미지를 저장하고 경로 반환.
     """
     if mode == "json":
-        r = await client.post(url, json=payload, headers=headers, timeout=settings.request_timeout)
+        r = await client.post(
+            url, json=payload, headers=headers, timeout=settings.request_timeout
+        )
     else:
-        r = await client.post(url, data=payload, headers=headers, timeout=settings.request_timeout)
+        r = await client.post(
+            url, data=payload, headers=headers, timeout=settings.request_timeout
+        )
 
     ctype = r.headers.get("Content-Type", "")
+
     # 인증/요청 오류 매핑
     if r.status_code == 401:
         raise AILabAuthError(r.text)
@@ -83,23 +132,32 @@ async def _try_once(client: httpx.AsyncClient, url: str, headers: Dict[str, str]
     if r.status_code >= 500:
         raise AILabError(f"Server error {r.status_code}: {r.text}")
 
-    # 바이너리 이미지 바로 내려오는 경우
+    # -----------------------------
+    # 1) 바이너리 이미지 바로 내려오는 경우
+    # -----------------------------
     if "image/" in ctype:
         fname = OUT_DIR / f"result_{uuid.uuid4().hex}.png"
-        Image.open(io.BytesIO(r.content)).save(fname)
+        img = _prepare_image_for_meshy(r.content)
+        img.save(fname, format="PNG")
         return str(fname)
 
-    # JSON 으로 URL 내려오는 경우
+    # -----------------------------
+    # 2) JSON 으로 URL 내려오는 경우
+    # -----------------------------
     try:
         data = r.json()
         for k in ("result_url", "image_url", "output_url", "url"):
             if k in data:
-                img = await client.get(data[k], timeout=settings.request_timeout)
-                img.raise_for_status()
+                img_resp = await client.get(
+                    data[k], timeout=settings.request_timeout
+                )
+                img_resp.raise_for_status()
                 fname = OUT_DIR / f"result_{uuid.uuid4().hex}.png"
-                Image.open(io.BytesIO(img.content)).save(fname)
+                img = _prepare_image_for_meshy(img_resp.content)
+                img.save(fname, format="PNG")
                 return str(fname)
     except Exception:
+        # JSON 파싱 실패 시 아래 예외 처리로 이동
         pass
 
     # 예측 불가 포맷
@@ -111,7 +169,7 @@ async def hairstyle_edit_pro(
     hair_style: str | None,
     color: str | None,
     image_size: int | None,
-    task_type: str | None
+    task_type: str | None,
 ) -> str:
     """
     AILabTools 헤어스타일 체인저(Pro) 호출.
@@ -119,8 +177,11 @@ async def hairstyle_edit_pro(
     여러 헤더/페이로드 조합을 순차 시도.
     """
     if not settings.ailab_api_key:
+        # dry-run: API 키가 없을 때는 최소 더미 PNG 반환
         fname = OUT_DIR / f"dryrun_{uuid.uuid4().hex}.png"
-        Image.new("RGB", (1, 1), (0, 0, 0)).save(fname)
+        Image.new("RGB", (MIN_SIZE_FOR_MESHY, MIN_SIZE_FOR_MESHY), (0, 0, 0)).save(
+            fname
+        )
         return str(fname)
 
     candidates = settings.effective_ailab_urls()
@@ -136,7 +197,7 @@ async def hairstyle_edit_pro(
         "/fusion/hair",
         "/hair-fusion",
         "/hair/style",
-        "/hair"
+        "/hair",
     ]
 
     def _make_url_candidates(bases: list[str]) -> list[str]:
@@ -160,7 +221,9 @@ async def hairstyle_edit_pro(
     url_candidates = _make_url_candidates(candidates)
 
     headers_list = _candidate_headers()
-    payload_list = _candidate_payloads(face_url, hair_style, color, image_size, task_type)
+    payload_list = _candidate_payloads(
+        face_url, hair_style, color, image_size, task_type
+    )
 
     errors: list[str] = []
     async with httpx.AsyncClient() as client:
@@ -170,10 +233,14 @@ async def hairstyle_edit_pro(
                     try:
                         return await _try_once(client, url, headers, mode, payload)
                     except AILabAuthError:
-                        errors.append(f"{url} -> 401 Unauthorized (headers={list(headers.keys())})")
+                        errors.append(
+                            f"{url} -> 401 Unauthorized (headers={list(headers.keys())})"
+                        )
                         break
                     except AILabBadReq as e:
-                        errors.append(f"{url} -> 400 Bad Request (mode={mode}): {str(e)[:120]}")
+                        errors.append(
+                            f"{url} -> 400 Bad Request (mode={mode}): {str(e)[:120]}"
+                        )
                         continue
                     except AILabError as e:
                         errors.append(f"{url} -> {str(e)[:160]}")
